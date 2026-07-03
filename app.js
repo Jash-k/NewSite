@@ -342,33 +342,93 @@ function playStream(streamUrl, streamTitle, itemTitle) {
     
     modalsContainer.innerHTML = `
         <div id="video-modal" onclick="if (event.target.id === 'video-modal') closeVideoModal()" 
-             class="fixed inset-0 bg-black/90 z-[120] flex items-center justify-center">
-            <div onclick="event.stopImmediatePropagation()" class="w-full max-w-[1050px] mx-4 lg:mx-auto">
-                <div class="flex justify-between px-1 pb-3 items-center">
-                    <div class="px-4">
-                        <div id="video-modal-title" class="font-extrabold text-xl">${itemTitle}</div>
-                        <div id="video-modal-stream-info" class="text-xs text-cyan-300 font-bold">${streamTitle}</div>
+             class="fixed inset-0 bg-black/95 z-[120] flex items-center justify-center">
+            <div onclick="event.stopImmediatePropagation()" class="w-full max-w-[1100px] mx-4 lg:mx-auto">
+                
+                <!-- Header -->
+                <div class="flex justify-between px-2 pb-4 items-center">
+                    <div class="px-2">
+                        <div id="video-modal-title" class="font-extrabold text-2xl">${itemTitle}</div>
+                        <div id="video-modal-stream-info" class="text-sm text-cyan-300 font-medium">${streamTitle}</div>
                     </div>
                     
-                    <button onclick="closeVideoModal()" class="px-5 flex items-center justify-center text-sm font-extrabold py-2.5 px-4 bg-slate-900 hover:bg-red-900/30 transition-colors text-red-300 border border-red-900/30 rounded-3xl text-xs">
-                        <i class="fa-solid fa-times mr-2"></i> <span>Close player</span>
-                    </button>
+                    <div class="flex items-center gap-3">
+                        <button onclick="attemptBypass('${streamUrl}', this)" 
+                                class="px-4 py-2 text-xs flex items-center gap-2 font-extrabold transition-colors bg-slate-800 hover:bg-cyan-900/30 text-cyan-300 border border-cyan-900/30 rounded-3xl px-5">
+                            <i class="fa-solid fa-shield-halved"></i>
+                            <span>Bypass</span>
+                        </button>
+                        
+                        <button onclick="closeVideoModal()" 
+                                class="px-5 flex items-center justify-center text-sm font-extrabold py-2.5 px-4 bg-red-900/30 hover:bg-red-900/50 transition-colors text-red-300 border border-red-900/30 rounded-3xl text-xs">
+                            <i class="fa-solid fa-times mr-2"></i> <span>Close</span>
+                        </button>
+                    </div>
                 </div>
                 
-                <div class="video-container bg-slate-900 border border-slate-700 rounded-3xl overflow-hidden shadow-2xl">
-                    <video id="player-video" class="w-full aspect-video bg-black" controls autoplay></video>
+                <!-- Video Player Container -->
+                <div class="video-container bg-slate-900 border border-slate-700 rounded-3xl overflow-hidden shadow-2xl relative group">
+                    <video id="player-video" class="w-full aspect-video bg-black" autoplay></video>
                     
-                    <div class="px-5 py-[7px] flex items-center justify-between bg-slate-900 border-t border-slate-700">
-                        <div class="px-1 flex items-center gap-x-2 text-xs">
-                            <div class="px-3 flex items-center justify-center text-emerald-300 text-xs font-extrabold bg-emerald-900/10 h-6 px-[8.5px] rounded-2xl">
-                                <span>HD</span>
-                            </div>
-                            <div class="text-xs font-medium text-white/50">Direct stream from M3U</div>
+                    <!-- Custom Controls Overlay -->
+                    <div id="custom-controls" class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 to-transparent px-5 pb-4 pt-8 transition-opacity">
+                        
+                        <!-- Progress Bar -->
+                        <div class="flex items-center gap-3 mb-3">
+                            <input type="range" id="progress-bar" class="flex-1 accent-cyan-400 cursor-pointer" 
+                                   min="0" max="100" step="0.1" value="0">
+                            <span id="time-display" class="text-xs text-white/80 font-mono w-24 text-right">00:00 / 00:00</span>
                         </div>
                         
-                        <div onclick="attemptBypass('${streamUrl}', this)" class="cursor-pointer px-3 transition-colors text-xs flex items-center justify-center gap-1.5 hover:text-cyan-300 text-white/60 font-extrabold" style="font-size: .67rem">
-                            <i class="fa-solid fa-shield-halved fa-fw"></i> 
-                            <span>Bypass restriction</span>
+                        <!-- Control Buttons -->
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center gap-2">
+                                <!-- Play/Pause -->
+                                <button id="play-pause-btn" class="w-11 h-11 flex items-center justify-center text-2xl text-white hover:text-cyan-400 transition-colors">
+                                    <i class="fa-solid fa-play" id="play-icon"></i>
+                                </button>
+                                
+                                <!-- Skip Buttons -->
+                                <button onclick="skipTime(-10)" class="w-9 h-9 flex items-center justify-center text-white/80 hover:text-white transition-colors">
+                                    <i class="fa-solid fa-backward"></i>
+                                </button>
+                                <button onclick="skipTime(10)" class="w-9 h-9 flex items-center justify-center text-white/80 hover:text-white transition-colors">
+                                    <i class="fa-solid fa-forward"></i>
+                                </button>
+                            </div>
+                            
+                            <div class="flex items-center gap-4">
+                                <!-- Volume -->
+                                <div class="flex items-center gap-2">
+                                    <button onclick="toggleMute()" class="text-white/80 hover:text-white">
+                                        <i class="fa-solid fa-volume-up" id="volume-icon"></i>
+                                    </button>
+                                    <input type="range" id="volume-slider" class="w-20 accent-cyan-400" 
+                                           min="0" max="1" step="0.05" value="1">
+                                </div>
+                                
+                                <!-- Playback Speed -->
+                                <div class="flex items-center gap-1 text-xs">
+                                    <select id="speed-select" class="bg-slate-800 border border-slate-600 text-white text-xs px-2 py-1 rounded-xl">
+                                        <option value="0.5">0.5x</option>
+                                        <option value="0.75">0.75x</option>
+                                        <option value="1" selected>1x</option>
+                                        <option value="1.25">1.25x</option>
+                                        <option value="1.5">1.5x</option>
+                                        <option value="2">2x</option>
+                                    </select>
+                                </div>
+                                
+                                <!-- Fullscreen -->
+                                <button onclick="toggleFullscreen()" class="text-white/80 hover:text-white px-2">
+                                    <i class="fa-solid fa-expand"></i>
+                                </button>
+                                
+                                <!-- PiP -->
+                                <button onclick="togglePictureInPicture()" class="text-white/80 hover:text-white px-2">
+                                    <i class="fa-solid fa-compress-arrows-alt"></i>
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -382,10 +442,13 @@ function playStream(streamUrl, streamTitle, itemTitle) {
     
     setTimeout(() => {
         videoEl.play().catch(() => {});
-    }, 300);
+    }, 400);
 
     currentPlayer = videoEl;
     videoEl.onerror = () => handleVideoError(videoEl, streamUrl);
+    
+    // Setup custom player controls
+    setupCustomPlayerControls(videoEl);
 }
 
 function handleVideoError(videoElement, originalUrl) {
@@ -478,6 +541,145 @@ function closeVideoModal() {
     if (currentPlayer) {
         currentPlayer.pause();
         currentPlayer.src = '';
+    }
+}
+
+// ==================== CUSTOM VIDEO PLAYER CONTROLS ====================
+function setupCustomPlayerControls(video) {
+    const playPauseBtn = document.getElementById('play-pause-btn');
+    const playIcon = document.getElementById('play-icon');
+    const progressBar = document.getElementById('progress-bar');
+    const timeDisplay = document.getElementById('time-display');
+    const volumeSlider = document.getElementById('volume-slider');
+    const volumeIcon = document.getElementById('volume-icon');
+    const speedSelect = document.getElementById('speed-select');
+    const controls = document.getElementById('custom-controls');
+
+    if (!playPauseBtn || !progressBar) return;
+
+    // Play/Pause Toggle
+    playPauseBtn.onclick = () => {
+        if (video.paused) {
+            video.play();
+        } else {
+            video.pause();
+        }
+    };
+
+    video.onplay = () => {
+        playIcon.classList.remove('fa-play');
+        playIcon.classList.add('fa-pause');
+    };
+    
+    video.onpause = () => {
+        playIcon.classList.remove('fa-pause');
+        playIcon.classList.add('fa-play');
+    };
+
+    // Progress Bar
+    video.ontimeupdate = () => {
+        if (!progressBar) return;
+        const percent = (video.currentTime / video.duration) * 100;
+        progressBar.value = percent || 0;
+        
+        // Update time display
+        if (timeDisplay) {
+            const current = formatTime(video.currentTime);
+            const duration = formatTime(video.duration);
+            timeDisplay.textContent = `${current} / ${duration}`;
+        }
+    };
+
+    progressBar.oninput = () => {
+        video.currentTime = (progressBar.value / 100) * video.duration;
+    };
+
+    // Volume Control
+    volumeSlider.value = video.volume;
+    volumeSlider.oninput = () => {
+        video.volume = volumeSlider.value;
+        updateVolumeIcon(volumeIcon, video.volume);
+    };
+
+    // Speed Control
+    speedSelect.onchange = () => {
+        video.playbackRate = parseFloat(speedSelect.value);
+    };
+
+    // Keyboard shortcuts
+    document.onkeydown = function(e) {
+        if (!video) return;
+        
+        if (e.key === " ") { e.preventDefault(); video.paused ? video.play() : video.pause(); }
+        if (e.key === "ArrowRight") video.currentTime += 10;
+        if (e.key === "ArrowLeft") video.currentTime -= 10;
+        if (e.key.toLowerCase() === "f") toggleFullscreen();
+        if (e.key.toLowerCase() === "m") toggleMute();
+    };
+
+    // Show controls on mouse move
+    let controlsTimeout;
+    const container = video.parentElement;
+    
+    container.onmousemove = () => {
+        controls.style.opacity = '1';
+        clearTimeout(controlsTimeout);
+        controlsTimeout = setTimeout(() => {
+            if (!video.paused) controls.style.opacity = '0.95';
+        }, 2500);
+    };
+}
+
+function formatTime(seconds) {
+    if (!seconds || isNaN(seconds)) return "00:00";
+    const min = Math.floor(seconds / 60);
+    const sec = Math.floor(seconds % 60);
+    return `${min.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
+}
+
+function updateVolumeIcon(icon, volume) {
+    icon.classList.remove('fa-volume-up', 'fa-volume-down', 'fa-volume-mute');
+    if (volume == 0) icon.classList.add('fa-volume-mute');
+    else if (volume < 0.5) icon.classList.add('fa-volume-down');
+    else icon.classList.add('fa-volume-up');
+}
+
+function skipTime(seconds) {
+    if (!currentPlayer) return;
+    currentPlayer.currentTime += seconds;
+}
+
+function toggleMute() {
+    if (!currentPlayer) return;
+    currentPlayer.muted = !currentPlayer.muted;
+    
+    const icon = document.getElementById('volume-icon');
+    if (icon) {
+        icon.classList.remove('fa-volume-up', 'fa-volume-down', 'fa-volume-mute');
+        icon.classList.add(currentPlayer.muted ? 'fa-volume-mute' : 'fa-volume-up');
+    }
+}
+
+function toggleFullscreen() {
+    const container = document.querySelector('#video-modal .video-container');
+    if (!container) return;
+
+    if (!document.fullscreenElement) {
+        container.requestFullscreen?.() || 
+        container.webkitRequestFullscreen?.() || 
+        container.msRequestFullscreen?.();
+    } else {
+        document.exitFullscreen?.();
+    }
+}
+
+function togglePictureInPicture() {
+    if (!currentPlayer) return;
+    
+    if (document.pictureInPictureElement) {
+        document.exitPictureInPicture();
+    } else if (currentPlayer.requestPictureInPicture) {
+        currentPlayer.requestPictureInPicture();
     }
 }
 
