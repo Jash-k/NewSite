@@ -1,7 +1,6 @@
 // JaSH OTT - Main Application Logic
 // Stremio Addon: https://stremiotesting-production.up.railway.app
 
-// Load base URL from config.js (easy to change)
 const BASE_URL = (window.JASH_CONFIG && window.JASH_CONFIG.BASE_URL) 
     ? window.JASH_CONFIG.BASE_URL 
     : 'https://stremiotesting-production.up.railway.app';
@@ -10,10 +9,11 @@ let currentCatalog = { type: 'movie', id: 'm3u-movies', skip: 0 };
 let currentItems = [];
 let currentPlayer = null;
 
-// Simple in-memory cache for fast tab switching
 const catalogCache = {};
 
-// Tailwind initialization
+const ITEMS_PER_PAGE = 12;
+const RENDER_BATCH = 4;
+
 function initializeTailwind() {
     const style = document.createElement('style');
     style.innerHTML = `
@@ -27,7 +27,6 @@ function initializeTailwind() {
     document.head.appendChild(style);
 }
 
-// Show loading state
 function showLoading(show) {
     const loader = document.getElementById('loading-indicator');
     if (!loader) return;
@@ -41,13 +40,11 @@ function showLoading(show) {
     }
 }
 
-// Fetch catalog from Stremio addon (with caching)
 async function fetchCatalog(type, catalogId, skip = 0) {
     const cacheKey = `${type}-${catalogId}`;
 
-    // Return cached data instantly if available
     if (catalogCache[cacheKey] && skip === 0) {
-        return catalogCache[cacheKey];
+        return catalogCache[cacheKey].slice(0, ITEMS_PER_PAGE);
     }
 
     showLoading(true);
@@ -55,11 +52,11 @@ async function fetchCatalog(type, catalogId, skip = 0) {
         const url = `${BASE_URL}/catalog/${type}/${catalogId}.json?skip=${skip}`;
         const res = await fetch(url);
         const data = await res.json();
-        const items = data.metas || [];
+        let items = data.metas || [];
 
-        // Cache first page results
         if (skip === 0) {
             catalogCache[cacheKey] = items;
+            items = items.slice(0, ITEMS_PER_PAGE);
         }
 
         return items;
@@ -71,7 +68,6 @@ async function fetchCatalog(type, catalogId, skip = 0) {
     }
 }
 
-// Fetch streams
 async function fetchStreams(type, id) {
     try {
         const url = `${BASE_URL}/stream/${type}/${id}.json`;
@@ -84,7 +80,6 @@ async function fetchStreams(type, id) {
     }
 }
 
-// Render items in grid
 function renderItems(items, append = false) {
     const grid = document.getElementById('content-grid');
     if (!grid) return;
@@ -96,13 +91,22 @@ function renderItems(items, append = false) {
         currentItems = [...currentItems, ...items];
     }
 
-    items.forEach(item => {
-        const cardHTML = `
-            <div onclick="showItemModal('${item.id}', '${item.type}', this)" 
-                 class="poster-card cursor-pointer group bg-slate-900 border border-slate-700 hover:border-cyan-700/60 rounded-3xl overflow-hidden shadow-xl">
+    let index = 0;
+
+    function renderBatch() {
+        const fragment = document.createDocumentFragment();
+        const end = Math.min(index + RENDER_BATCH, items.length);
+
+        for (let i = index; i < end; i++) {
+            const item = items[i];
+            const card = document.createElement('div');
+            card.className = `poster-card cursor-pointer group bg-slate-900 border border-slate-700 hover:border-cyan-700/60 rounded-3xl overflow-hidden shadow-xl`;
+            
+            card.innerHTML = `
                 <div class="relative">
                     <img src="${item.poster || 'https://picsum.photos/id/1015/600/900'}" 
                          class="poster-img w-full aspect-[2/2.95] object-cover" 
+                         loading="lazy"
                          onerror="this.src='https://picsum.photos/id/1015/600/900'">
                     
                     <div class="absolute top-3 right-3">
@@ -123,17 +127,26 @@ function renderItems(items, append = false) {
                         </div>
                     </div>
                 </div>
-            </div>
-        `;
-        grid.innerHTML += cardHTML;
-    });
+            `;
+            
+            card.onclick = () => showItemModal(item.id, item.type, card);
+            fragment.appendChild(card);
+        }
 
-    // Update count
+        grid.appendChild(fragment);
+        index = end;
+
+        if (index < items.length) {
+            setTimeout(renderBatch, 25);
+        }
+    }
+    
+    renderBatch();
+
     const countEl = document.getElementById('catalog-count');
     if (countEl) countEl.innerHTML = currentItems.length;
 }
 
-// Switch between catalogs (much faster with cache)
 async function switchCatalog(type, catalogId, element) {
     document.querySelectorAll('.catalog-tab').forEach(el => {
         el.classList.remove('active', 'border-cyan-400');
@@ -145,10 +158,9 @@ async function switchCatalog(type, catalogId, element) {
     
     currentCatalog = { type, id: catalogId, skip: 0 };
     
-    // Use cached data instantly if available
     const cacheKey = `${type}-${catalogId}`;
     if (catalogCache[cacheKey]) {
-        renderItems(catalogCache[cacheKey]);
+        renderItems(catalogCache[cacheKey].slice(0, ITEMS_PER_PAGE));
         const loadBtn = document.getElementById('load-more-btn');
         if (loadBtn) loadBtn.style.display = 'none';
         return;
@@ -164,7 +176,6 @@ async function switchCatalog(type, catalogId, element) {
     }
 }
 
-// Load more items
 async function loadMoreContent() {
     const loadBtn = document.getElementById('load-more-btn');
     if (loadBtn) loadBtn.style.display = 'none';
@@ -181,18 +192,15 @@ async function loadMoreContent() {
     }
 }
 
-// Show item modal with streams
 async function showItemModal(itemId, type, cardElement) {
     const modalsContainer = document.getElementById('modals-container');
     
-    // Create modal HTML
     modalsContainer.innerHTML = `
         <div id="item-modal" onclick="if (event.target.id === 'item-modal') closeModal()" 
              class="fixed inset-0 bg-black/70 backdrop-blur-xl z-[90] flex items-end lg:items-center justify-center">
             <div onclick="event.stopImmediatePropagation()" 
                  class="modal w-full lg:w-[640px] lg:m-4 lg:rounded-3xl bg-slate-900 border border-slate-700 lg:max-h-[88vh] max-h-[92vh] overflow-hidden flex flex-col">
                 
-                <!-- Modal Header -->
                 <div class="px-5 pt-5 pb-3 flex justify-between items-center border-b border-slate-700">
                     <div class="flex items-center gap-x-3">
                         <div id="modal-type-pill" class="px-3 py-1 text-xs font-extrabold flex items-center justify-center bg-slate-800 rounded-2xl text-cyan-300" style="font-size: .68rem; padding-left: 10.5px; padding-right: 10.5px;"></div>
@@ -204,7 +212,6 @@ async function showItemModal(itemId, type, cardElement) {
                 </div>
                 
                 <div class="flex flex-col lg:flex-row">
-                    <!-- Poster -->
                     <div class="lg:w-[200px] px-5 pt-5 lg:pt-5 pb-2 lg:pb-5">
                         <img id="modal-poster" class="w-full aspect-[2/3] lg:w-[190px] shadow-xl object-cover rounded-3xl border border-slate-700" alt="">
                     </div>
@@ -212,7 +219,6 @@ async function showItemModal(itemId, type, cardElement) {
                     <div class="flex-1 px-5 pb-5 pt-3 lg:pt-5">
                         <div id="modal-name" class="font-extrabold text-3xl leading-none tracking-tighter"></div>
                         
-                        <!-- Streams -->
                         <div class="mt-6">
                             <div class="flex items-center justify-between mb-3 px-1">
                                 <div class="font-extrabold text-sm flex items-center gap-x-[5px]">
@@ -234,7 +240,6 @@ async function showItemModal(itemId, type, cardElement) {
 
     const item = currentItems.find(i => i.id === itemId) || {};
     
-    // Fill data
     document.getElementById('modal-name').innerHTML = item.name || 'Untitled';
     document.getElementById('modal-year').innerHTML = item.year || '';
     document.getElementById('modal-poster').src = item.poster || 'https://picsum.photos/id/1015/600/900';
@@ -242,7 +247,6 @@ async function showItemModal(itemId, type, cardElement) {
     const pill = document.getElementById('modal-type-pill');
     pill.innerHTML = `<span class="font-black">${type.toUpperCase()}</span>`;
 
-    // Load streams
     const streamContainer = document.getElementById('streams-list');
     streamContainer.innerHTML = `
         <div class="flex items-center justify-center py-8 px-4">
@@ -299,7 +303,6 @@ function closeModal() {
     if (modal) modal.remove();
 }
 
-// Play stream with video player
 function playStream(streamUrl, streamTitle, itemTitle) {
     closeModal();
     
@@ -350,8 +353,6 @@ function playStream(streamUrl, streamTitle, itemTitle) {
     }, 300);
 
     currentPlayer = videoEl;
-    
-    // Handle Cloudflare error
     videoEl.onerror = () => handleVideoError(videoEl, streamUrl);
 }
 
@@ -376,7 +377,6 @@ function handleVideoError(videoElement, originalUrl) {
     `;
 }
 
-// Advanced Cloudflare Bypass
 function attemptBypass(originalUrl = null, btnElement = null) {
     if (!originalUrl && currentPlayer) originalUrl = currentPlayer.src;
     if (!originalUrl) return;
@@ -465,7 +465,6 @@ function showToastNotification(text) {
     }, 3700);
 }
 
-// Search functionality
 function initializeSearch() {
     const searchInput = document.getElementById('global-search');
     if (!searchInput) return;
@@ -491,7 +490,6 @@ function initializeSearch() {
     });
 }
 
-// Show random content
 function showRandomContent() {
     if (!currentItems.length) return;
     const randomIndex = Math.floor(Math.random() * currentItems.length);
@@ -499,7 +497,6 @@ function showRandomContent() {
     showItemModal(randomItem.id, randomItem.type);
 }
 
-// Preload all catalogs on startup for fast tab switching
 async function preloadAllCatalogs() {
     const promises = [
         fetchCatalog('movie', 'm3u-movies', 0),
@@ -507,22 +504,18 @@ async function preloadAllCatalogs() {
         fetchCatalog('movie', 'm3u-dubbed', 0)
     ];
     
-    // Fetch all in parallel (much faster)
     await Promise.all(promises);
     console.log('%c[JaSH OTT] All catalogs preloaded for instant switching', 'color:#22c55e');
 }
 
-// Initialize application
 async function initializeApp() {
     initializeTailwind();
     
-    // Load default catalog (Movies)
     const moviesTab = document.getElementById('movies-tab');
     if (moviesTab) {
         moviesTab.classList.add('active', 'border-cyan-400');
     }
     
-    // Load Movies first (show immediately)
     const initialItems = await fetchCatalog('movie', 'm3u-movies', 0);
     renderItems(initialItems);
     
@@ -533,18 +526,15 @@ async function initializeApp() {
     
     initializeSearch();
     
-    // Preload Series + Dubbed in background (for fast initial switch)
     setTimeout(() => {
         preloadAllCatalogs();
-    }, 300);
+    }, 600);
     
     console.log('%c[JaSH OTT] Ultra modern static Stremio frontend initialized.', 'color:rgb(163, 163, 172)');
 }
 
-// Boot app
 window.onload = initializeApp;
 
-// Keyboard shortcuts
 document.addEventListener('keydown', function(e) {
     if (e.metaKey && e.key === "/") {
         e.preventDefault();
