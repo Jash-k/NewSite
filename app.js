@@ -8,6 +8,7 @@ const BASE_URL = (window.JASH_CONFIG && window.JASH_CONFIG.BASE_URL)
 let currentCatalog = { type: 'movie', id: 'm3u-movies', skip: 0 };
 let currentItems = [];
 let currentPlayer = null;
+let loadedCount = 0; // Track how many items are currently displayed
 
 const catalogCache = {};
 
@@ -40,11 +41,13 @@ function showLoading(show) {
     }
 }
 
-async function fetchCatalog(type, catalogId, skip = 0) {
+async function fetchCatalog(type, catalogId, skip = 0, limit = null) {
     const cacheKey = `${type}-${catalogId}`;
 
+    // If we have cache and asking for first page
     if (catalogCache[cacheKey] && skip === 0) {
-        return catalogCache[cacheKey].slice(0, ITEMS_PER_PAGE);
+        const cachedItems = catalogCache[cacheKey];
+        return limit ? cachedItems.slice(0, limit) : cachedItems;
     }
 
     showLoading(true);
@@ -54,9 +57,14 @@ async function fetchCatalog(type, catalogId, skip = 0) {
         const data = await res.json();
         let items = data.metas || [];
 
+        // Only cache first page
         if (skip === 0) {
             catalogCache[cacheKey] = items;
-            items = items.slice(0, ITEMS_PER_PAGE);
+        }
+
+        // Apply limit only for initial load
+        if (skip === 0 && limit) {
+            items = items.slice(0, limit);
         }
 
         return items;
@@ -157,21 +165,30 @@ async function switchCatalog(type, catalogId, element) {
     element.classList.remove('border-transparent');
     
     currentCatalog = { type, id: catalogId, skip: 0 };
+    loadedCount = 0;
     
     const cacheKey = `${type}-${catalogId}`;
     if (catalogCache[cacheKey]) {
-        renderItems(catalogCache[cacheKey].slice(0, ITEMS_PER_PAGE));
+        const firstBatch = catalogCache[cacheKey].slice(0, ITEMS_PER_PAGE);
+        renderItems(firstBatch);
+        loadedCount = firstBatch.length;
+        
         const loadBtn = document.getElementById('load-more-btn');
-        if (loadBtn) loadBtn.style.display = 'none';
+        if (loadBtn) {
+            loadBtn.style.display = (catalogCache[cacheKey].length > ITEMS_PER_PAGE) ? 'flex' : 'none';
+            loadBtn.onclick = () => loadMoreContent();
+        }
         return;
     }
     
-    const items = await fetchCatalog(type, catalogId, 0);
+    const items = await fetchCatalog(type, catalogId, 0, ITEMS_PER_PAGE);
     renderItems(items);
+    loadedCount = items.length;
     
     const loadBtn = document.getElementById('load-more-btn');
     if (loadBtn) {
-        loadBtn.style.display = (items.length >= 20) ? 'flex' : 'none';
+        const totalAvailable = catalogCache[cacheKey] ? catalogCache[cacheKey].length : 0;
+        loadBtn.style.display = (totalAvailable > ITEMS_PER_PAGE) ? 'flex' : 'flex';
         loadBtn.onclick = () => loadMoreContent();
     }
 }
@@ -179,16 +196,31 @@ async function switchCatalog(type, catalogId, element) {
 async function loadMoreContent() {
     const loadBtn = document.getElementById('load-more-btn');
     if (loadBtn) loadBtn.style.display = 'none';
+
+    const cacheKey = `${currentCatalog.type}-${currentCatalog.id}`;
+    const cachedItems = catalogCache[cacheKey] || [];
     
-    currentCatalog.skip += 20;
+    const nextBatch = cachedItems.slice(loadedCount, loadedCount + ITEMS_PER_PAGE);
     
-    const newItems = await fetchCatalog(currentCatalog.type, currentCatalog.id, currentCatalog.skip);
-    
-    if (newItems.length > 0) {
-        renderItems(newItems, true);
-        if (loadBtn) loadBtn.style.display = 'flex';
+    if (nextBatch.length > 0) {
+        renderItems(nextBatch, true);
+        loadedCount += nextBatch.length;
+        
+        // Show button again if more items exist
+        if (loadedCount < cachedItems.length) {
+            if (loadBtn) loadBtn.style.display = 'flex';
+        }
     } else {
-        if (loadBtn) loadBtn.style.display = 'none';
+        // Fallback: fetch more from network
+        currentCatalog.skip = loadedCount;
+        const newItems = await fetchCatalog(currentCatalog.type, currentCatalog.id, currentCatalog.skip, ITEMS_PER_PAGE);
+        
+        if (newItems.length > 0) {
+            renderItems(newItems, true);
+            loadedCount += newItems.length;
+            
+            if (loadBtn) loadBtn.style.display = 'flex';
+        }
     }
 }
 
