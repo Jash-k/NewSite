@@ -1,7 +1,10 @@
 // JaSH OTT - Main Application Logic
 // Stremio Addon: https://stremiotesting-production.up.railway.app
 
-const BASE_URL = 'https://stremiotesting-production.up.railway.app';
+// Load base URL from config.js (easy to change)
+const BASE_URL = (window.JASH_CONFIG && window.JASH_CONFIG.BASE_URL) 
+    ? window.JASH_CONFIG.BASE_URL 
+    : 'https://stremiotesting-production.up.railway.app';
 
 let currentCatalog = { type: 'movie', id: 'm3u-movies', skip: 0 };
 let currentItems = [];
