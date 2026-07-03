@@ -10,6 +10,9 @@ let currentCatalog = { type: 'movie', id: 'm3u-movies', skip: 0 };
 let currentItems = [];
 let currentPlayer = null;
 
+// Simple in-memory cache for fast tab switching
+const catalogCache = {};
+
 // Tailwind initialization
 function initializeTailwind() {
     const style = document.createElement('style');
@@ -38,14 +41,28 @@ function showLoading(show) {
     }
 }
 
-// Fetch catalog from Stremio addon
+// Fetch catalog from Stremio addon (with caching)
 async function fetchCatalog(type, catalogId, skip = 0) {
+    const cacheKey = `${type}-${catalogId}`;
+
+    // Return cached data instantly if available
+    if (catalogCache[cacheKey] && skip === 0) {
+        return catalogCache[cacheKey];
+    }
+
     showLoading(true);
     try {
         const url = `${BASE_URL}/catalog/${type}/${catalogId}.json?skip=${skip}`;
         const res = await fetch(url);
         const data = await res.json();
-        return data.metas || [];
+        const items = data.metas || [];
+
+        // Cache first page results
+        if (skip === 0) {
+            catalogCache[cacheKey] = items;
+        }
+
+        return items;
     } catch (err) {
         console.error(err);
         return [];
@@ -116,7 +133,7 @@ function renderItems(items, append = false) {
     if (countEl) countEl.innerHTML = currentItems.length;
 }
 
-// Switch between catalogs
+// Switch between catalogs (much faster with cache)
 async function switchCatalog(type, catalogId, element) {
     document.querySelectorAll('.catalog-tab').forEach(el => {
         el.classList.remove('active', 'border-cyan-400');
@@ -127,6 +144,15 @@ async function switchCatalog(type, catalogId, element) {
     element.classList.remove('border-transparent');
     
     currentCatalog = { type, id: catalogId, skip: 0 };
+    
+    // Use cached data instantly if available
+    const cacheKey = `${type}-${catalogId}`;
+    if (catalogCache[cacheKey]) {
+        renderItems(catalogCache[cacheKey]);
+        const loadBtn = document.getElementById('load-more-btn');
+        if (loadBtn) loadBtn.style.display = 'none';
+        return;
+    }
     
     const items = await fetchCatalog(type, catalogId, 0);
     renderItems(items);
@@ -473,6 +499,19 @@ function showRandomContent() {
     showItemModal(randomItem.id, randomItem.type);
 }
 
+// Preload all catalogs on startup for fast tab switching
+async function preloadAllCatalogs() {
+    const promises = [
+        fetchCatalog('movie', 'm3u-movies', 0),
+        fetchCatalog('series', 'm3u-series', 0),
+        fetchCatalog('movie', 'm3u-dubbed', 0)
+    ];
+    
+    // Fetch all in parallel (much faster)
+    await Promise.all(promises);
+    console.log('%c[JaSH OTT] All catalogs preloaded for instant switching', 'color:#22c55e');
+}
+
 // Initialize application
 async function initializeApp() {
     initializeTailwind();
@@ -483,6 +522,7 @@ async function initializeApp() {
         moviesTab.classList.add('active', 'border-cyan-400');
     }
     
+    // Load Movies first (show immediately)
     const initialItems = await fetchCatalog('movie', 'm3u-movies', 0);
     renderItems(initialItems);
     
@@ -493,10 +533,10 @@ async function initializeApp() {
     
     initializeSearch();
     
-    // Preload series in background
+    // Preload Series + Dubbed in background (for fast initial switch)
     setTimeout(() => {
-        fetchCatalog('series', 'm3u-series', 0);
-    }, 4000);
+        preloadAllCatalogs();
+    }, 300);
     
     console.log('%c[JaSH OTT] Ultra modern static Stremio frontend initialized.', 'color:rgb(163, 163, 172)');
 }
